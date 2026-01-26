@@ -1,0 +1,402 @@
+;; Marketplace Contract
+;; Peer-to-peer trading platform for property shares
+
+;; Error codes
+(define-constant ERR-NOT-AUTHORIZED (err u600))
+(define-constant ERR-ORDER-NOT-FOUND (err u601))
+(define-constant ERR-INVALID-AMOUNT (err u602))
+(define-constant ERR-INSUFFICIENT-BALANCE (err u603))
+(define-constant ERR-NOT-WHITELISTED (err u604))
+(define-constant ERR-ORDER-EXPIRED (err u605))
+(define-constant ERR-ORDER-FILLED (err u606))
+(define-constant ERR-INVALID-PRICE (err u607))
+
+;; Order type constants
+(define-constant ORDER-TYPE-SELL u1)
+(define-constant ORDER-TYPE-BUY u2)
+
+;; Order status constants
+(define-constant ORDER-STATUS-OPEN u1)
+(define-constant ORDER-STATUS-FILLED u2)
+(define-constant ORDER-STATUS-CANCELLED u3)
+
+;; Platform fee (in basis points: 100 = 1%)
+(define-data-var platform-fee-bps uint u100) ;; 1%
+
+;; Contract state
+(define-data-var last-order-id uint u0)
+(define-data-var access-control-contract principal tx-sender)
+
+;; Order structure
+(define-map orders
+  uint
+  {
+    property-id: uint,
+    trader: principal,
+    order-type: uint,
+    quantity: uint,
+    price-per-share: uint,
+    total-price: uint,
+    expiration: uint,
+    status: uint,
+    share-token-contract: principal,
+    created-at: uint
+  }
+)
+
+;; Escrowed shares (for sell orders)
+(define-map escrowed-shares
+  uint
+  uint
+)
+
+;; Price history tracking
+(define-map last-trade-price
+  uint ;; property-id
+  uint ;; price-per-share
+)
+
+;; Trading volume tracking
+(define-map trading-volume
+  uint ;; property-id
+  uint ;; total volume
+)
+
+;; Helper functions
+
+(define-private (is-admin)
+  (contract-call? .access-control is-admin tx-sender)
+)
+
+(define-private (is-whitelisted (token-contract principal) (address principal))
+  (unwrap-panic (contract-call? token-contract is-address-whitelisted address))
+)
+
+(define-private (calculate-platform-fee (amount uint))
+  (/ (* amount (var-get platform-fee-bps)) u10000)
+)
+
+;; Read-only functions
+
+(define-read-only (get-order (order-id uint))
+  (ok (map-get? orders order-id))
+)
+
+(define-read-only (get-last-trade-price (property-id uint))
+  (ok (map-get? last-trade-price property-id))
+)
+
+(define-read-only (get-trading-volume (property-id uint))
+  (ok (default-to u0 (map-get? trading-volume property-id)))
+)
+
+(define-read-only (get-platform-fee-bps)
+  (ok (var-get platform-fee-bps))
+)
+
+;; Public functions
+
+(define-public (create-sell-order
+    (property-id uint)
+    (quantity uint)
+    (price-per-share uint)
+    (expiration uint)
+    (share-token-contract principal)
+  )
+  (let
+    (
+      (new-order-id (+ (var-get last-order-id) u1))
+      (total-price (* quantity price-per-share))
+      (seller-balance (unwrap-panic (contract-call? share-token-contract get-balance tx-sender)))
+    )
+    ;; Validate inputs
+    (asserts! (> quantity u0) ERR-INVALID-AMOUNT)
+    (asserts! (> price-per-share u0) ERR-INVALID-PRICE)
+    (asserts! (> stacks-block-height expiration) ERR-ORDER-EXPIRED)
+    
+    ;; Check seller is whitelisted
+    (asserts! (is-whitelisted share-token-contract tx-sender) ERR-NOT-WHITELISTED)
+    
+    ;; Check seller has sufficient balance
+    (asserts! (>= seller-balance quantity) ERR-INSUFFICIENT-BALANCE)
+    
+    ;; Escrow shares (transfer to this contract - contract receives as contract-caller)
+    (try! (contract-call? share-token-contract transfer quantity tx-sender (as-contract tx-sender) none))
+    
+    ;; Create order
+    (map-set orders new-order-id {
+      property-id: property-id,
+      trader: tx-sender,
+      order-type: ORDER-TYPE-SELL,
+      quantity: quantity,
+      price-per-share: price-per-share,
+      total-price: total-price,
+      expiration: expiration,
+      status: ORDER-STATUS-OPEN,
+      share-token-contract: share-token-contract,
+      created-at: block-height
+    })
+    
+    ;; Track escrowed shares
+    (map-set escrowed-shares new-order-id quantity)
+    
+    ;; Update last order ID
+    (var-set last-order-id new-order-id)
+    
+    (print {
+      event: "sell-order-created",
+      order-id: new-order-id,
+      property-id: property-id,
+      seller: tx-sender,
+      quantity: quantity,
+      price-per-share: price-per-share,
+      total-price: total-price
+    })
+    
+    (ok new-order-id)
+  )
+)
+
+(define-public (create-buy-order
+    (property-id uint)
+    (quantity uint)
+    (price-per-share uint)
+    (expiration uint)
+    (share-token-contract principal)
+  )
+  (let
+    (
+      (new-order-id (+ (var-get last-order-id) u1))
+      (total-price (* quantity price-per-share))
+    )
+    ;; Validate inputs
+    (asserts! (> quantity u0) ERR-INVALID-AMOUNT)
+    (asserts! (> price-per-share u0) ERR-INVALID-PRICE)
+    (asserts! (> stacks-block-height expiration) ERR-ORDER-EXPIRED)
+    
+    ;; Check buyer is whitelisted
+    (asserts! (is-whitelisted share-token-contract tx-sender) ERR-NOT-WHITELISTED)
+    
+    ;; Escrow STX (buyer deposits payment to this contract)
+    (try! (stx-transfer? total-price tx-sender (as-contract tx-sender)))
+    
+    ;; Create order
+    (map-set orders new-order-id {
+      property-id: property-id,
+      trader: tx-sender,
+      order-type: ORDER-TYPE-BUY,
+      quantity: quantity,
+      price-per-share: price-per-share,
+      total-price: total-price,
+      expiration: expiration,
+      status: ORDER-STATUS-OPEN,
+      share-token-contract: share-token-contract,
+      created-at: block-height
+    })
+    
+    ;; Update last order ID
+    (var-set last-order-id new-order-id)
+    
+    (print {
+      event: "buy-order-created",
+      order-id: new-order-id,
+      property-id: property-id,
+      buyer: tx-sender,
+      quantity: quantity,
+      price-per-share: price-per-share,
+      total-price: total-price
+    })
+    
+    (ok new-order-id)
+  )
+)
+
+(define-public (fill-sell-order (order-id uint))
+  (let
+    (
+      (order (unwrap! (map-get? orders order-id) ERR-ORDER-NOT-FOUND))
+      (seller (get trader order))
+      (quantity (get quantity order))
+      (total-price (get total-price order))
+      (platform-fee (calculate-platform-fee total-price))
+      (seller-proceeds (- total-price platform-fee))
+      (share-token-contract (get share-token-contract order))
+    )
+    ;; Check order is open
+    (asserts! (is-eq (get status order) ORDER-STATUS-OPEN) ERR-ORDER-FILLED)
+    
+    ;; Check order type is sell
+    (asserts! (is-eq (get order-type order) ORDER-TYPE-SELL) ERR-NOT-AUTHORIZED)
+    
+    ;; Check not expired
+    (asserts! (> (get expiration order) stacks-block-height) ERR-ORDER-EXPIRED)
+    
+    ;; Check buyer is whitelisted
+    (asserts! (is-whitelisted share-token-contract tx-sender) ERR-NOT-WHITELISTED)
+    
+    ;; Buyer pays STX to this contract  
+    (try! (stx-transfer? total-price tx-sender (as-contract tx-sender)))
+    
+    ;; Transfer shares from escrow to buyer
+    (try! (as-contract (contract-call? share-token-contract transfer quantity tx-sender tx-sender none)))
+    
+    ;; Pay seller (minus platform fee)
+    (try! (as-contract (stx-transfer? seller-proceeds tx-sender seller)))
+    
+    ;; Update order status
+    (map-set orders order-id (merge order { status: ORDER-STATUS-FILLED }))
+    
+    ;; Update price history
+    (map-set last-trade-price (get property-id order) (get price-per-share order))
+    
+    ;; Update trading volume
+    (let
+      (
+        (current-volume (default-to u0 (map-get? trading-volume (get property-id order))))
+      )
+      (map-set trading-volume (get property-id order) (+ current-volume quantity))
+    )
+    
+    (print {
+      event: "sell-order-filled",
+      order-id: order-id,
+      seller: seller,
+      buyer: tx-sender,
+      quantity: quantity,
+      price-per-share: (get price-per-share order),
+      platform-fee: platform-fee
+    })
+    
+    (ok true)
+  )
+)
+
+(define-public (fill-buy-order (order-id uint))
+  (let
+    (
+      (order (unwrap! (map-get? orders order-id) ERR-ORDER-NOT-FOUND))
+      (buyer (get trader order))
+      (quantity (get quantity order))
+      (total-price (get total-price order))
+      (platform-fee (calculate-platform-fee total-price))
+      (seller-proceeds (- total-price platform-fee))
+      (share-token-contract (get share-token-contract order))
+      (seller-balance (unwrap-panic (contract-call? share-token-contract get-balance tx-sender)))
+    )
+    ;; Check order is open
+    (asserts! (is-eq (get status order) ORDER-STATUS-OPEN) ERR-ORDER-FILLED)
+    
+    ;; Check order type is buy
+    (asserts! (is-eq (get order-type order) ORDER-TYPE-BUY) ERR-NOT-AUTHORIZED)
+    
+    ;; Check not expired
+    (asserts! (< block-height (get expiration order)) ERR-ORDER-EXPIRED)
+    
+    ;; Check seller is whitelisted
+    (asserts! (is-whitelisted share-token-contract tx-sender) ERR-NOT-WHITELISTED)
+    
+    ;; Check seller has sufficient shares
+    (asserts! (>= seller-balance quantity) ERR-INSUFFICIENT-BALANCE)
+    
+    ;; Transfer shares from seller to buyer
+    (try! (contract-call? share-token-contract transfer quantity tx-sender buyer none))
+    
+    ;; Pay seller from escrowed STX (minus platform fee)
+    (try! (as-contract (stx-transfer? seller-proceeds tx-sender tx-sender)))
+    
+    ;; Update order status
+    (map-set orders order-id (merge order { status: ORDER-STATUS-FILLED }))
+    
+    ;; Update price history
+    (map-set last-trade-price (get property-id order) (get price-per-share order))
+    
+    ;; Update trading volume
+    (let
+      (
+        (current-volume (default-to u0 (map-get? trading-volume (get property-id order))))
+      )
+      (map-set trading-volume (get property-id order) (+ current-volume quantity))
+    )
+    
+    (print {
+      event: "buy-order-filled",
+      order-id: order-id,
+      seller: tx-sender,
+      buyer: buyer,
+      quantity: quantity,
+      price-per-share: (get price-per-share order),
+      platform-fee: platform-fee
+    })
+    
+    (ok true)
+  )
+)
+
+(define-public (cancel-order (order-id uint))
+  (let
+    (
+      (order (unwrap! (map-get? orders order-id) ERR-ORDER-NOT-FOUND))
+    )
+    ;; Only order creator can cancel
+    (asserts! (is-eq tx-sender (get trader order)) ERR-NOT-AUTHORIZED)
+    
+    ;; Check order is still open
+    (asserts! (is-eq (get status order) ORDER-STATUS-OPEN) ERR-ORDER-FILLED)
+    
+    ;; Return escrowed assets
+    (if (is-eq (get order-type order) ORDER-TYPE-SELL)
+      ;; Return shares to seller
+      (try! (as-contract (contract-call? (get share-token-contract order) transfer (get quantity order) tx-sender (get trader order) none)))
+      ;; Return STX to buyer
+      (try! (as-contract (stx-transfer? (get total-price order) tx-sender (get trader order))))
+    )
+    
+    ;; Update order status
+    (map-set orders order-id (merge order { status: ORDER-STATUS-CANCELLED }))
+    
+    (print {
+      event: "order-cancelled",
+      order-id: order-id,
+      trader: tx-sender
+    })
+    
+    (ok true)
+  )
+)
+
+(define-public (set-platform-fee (new-fee-bps uint))
+  (begin
+    ;; Only admin can update fee
+    (asserts! (is-admin) ERR-NOT-AUTHORIZED)
+    
+    ;; Validate fee (max 10%)
+    (asserts! (<= new-fee-bps u1000) ERR-INVALID-AMOUNT)
+    
+    (var-set platform-fee-bps new-fee-bps)
+    
+    (print {
+      event: "platform-fee-updated",
+      new-fee-bps: new-fee-bps
+    })
+    
+    (ok true)
+  )
+)
+
+(define-public (withdraw-platform-fees (amount uint) (recipient principal))
+  (begin
+    ;; Only admin can withdraw fees
+    (asserts! (is-admin) ERR-NOT-AUTHORIZED)
+    
+    ;; Transfer fees
+    (try! (as-contract (stx-transfer? amount tx-sender recipient)))
+    
+    (print {
+      event: "platform-fees-withdrawn",
+      amount: amount,
+      recipient: recipient
+    })
+    
+    (ok true)
+  )
+)
