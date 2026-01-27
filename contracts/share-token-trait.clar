@@ -13,8 +13,5 @@
     ;; Governance specific functions
     (lock-shares (principal uint) (response bool uint))
     (unlock-shares (principal uint) (response bool uint))
-    
-    ;; Whitelist functions
-    (is-address-whitelisted (principal) (response bool uint))
   )
 )
