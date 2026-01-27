@@ -1,4 +1,4 @@
-;; Marketplace Contract ; TEST
+;; Marketplace Contract
 ;; Peer-to-peer trading platform for property shares
 
 ;; Error codes
