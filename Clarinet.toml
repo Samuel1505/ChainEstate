@@ -9,6 +9,51 @@ requirements = []
 path = 'contracts/chainestate.clar'
 clarity_version = 4
 epoch = 'latest'
+
+[contracts.sip-009-nft-trait]
+path = 'contracts/sip-009-nft-trait.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.sip-010-trait]
+path = 'contracts/sip-010-trait.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.access-control]
+path = 'contracts/access-control.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.property-registry]
+path = 'contracts/property-registry.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.share-token-trait]
+path = 'contracts/share-token-trait.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.share-token]
+path = 'contracts/share-token.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.governance]
+path = 'contracts/governance.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.marketplace]
+path = 'contracts/marketplace.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.rental-distribution]
+path = 'contracts/rental-distribution.clar'
+clarity_version = 4
+epoch = 'latest'
 [repl.analysis]
 passes = [
     'check_checker',

@@ -3,6 +3,7 @@
 ;; Each property has its own instance of this contract
 
 (impl-trait .sip-010-trait.sip-010-trait)
+(impl-trait .share-token-trait.share-token-trait)
 
 ;; Error codes
 (define-constant ERR-NOT-AUTHORIZED (err u300))
@@ -31,13 +32,22 @@
 (define-data-var access-control-contract principal tx-sender)
 
 ;; Balances
-(define-map balances principal uint)
+(define-map balances
+  principal
+  uint
+)
 
 ;; Whitelist for KYC compliance
-(define-map whitelist principal bool)
+(define-map whitelist
+  principal
+  bool
+)
 
 ;; Share locks (for governance voting)
-(define-map locked-shares principal uint)
+(define-map locked-shares
+  principal
+  uint
+)
 
 ;; Helper functions
 
@@ -54,8 +64,7 @@
 )
 
 (define-private (get-available-balance (address principal))
-  (let
-    (
+  (let (
       (total-balance (unwrap-panic (get-balance address)))
       (locked (get-locked-amount address))
     )
@@ -107,6 +116,10 @@
   (ok (is-whitelisted address))
 )
 
+(define-public (check-whitelisted (address principal))
+  (ok (is-whitelisted address))
+)
+
 ;; Public functions
 
 (define-public (initialize
@@ -120,78 +133,79 @@
   (begin
     ;; Can only initialize once
     (asserts! (not (var-get initialized)) ERR-ALREADY-INITIALIZED)
-    
+
     ;; Only admin can initialize
     (asserts! (is-admin) ERR-NOT-AUTHORIZED)
-    
+
     ;; Set token metadata
     (var-set token-name name)
     (var-set token-symbol symbol)
     (var-set token-uri uri)
     (var-set property-id prop-id)
     (var-set access-control-contract access-control)
-    
+
     ;; Calculate total supply (shares * 10^6 for decimals)
-    (let
-      (
-        (supply (* total-shares u1000000))
-      )
+    (let ((supply (* total-shares u1000000)))
       (var-set total-supply supply)
-      
+
       ;; Mint all shares to contract deployer (platform treasury)
       (map-set balances tx-sender supply)
-      
+
       ;; Whitelist platform treasury
       (map-set whitelist tx-sender true)
     )
-    
+
     ;; Mark as initialized
     (var-set initialized true)
-    
+
     (print {
       event: "token-initialized",
       property-id: prop-id,
       name: name,
       symbol: symbol,
-      total-supply: (var-get total-supply)
+      total-supply: (var-get total-supply),
     })
-    
+
     (ok true)
   )
 )
 
-(define-public (transfer (amount uint) (sender principal) (recipient principal) (memo (optional (buff 34))))
+(define-public (transfer
+    (amount uint)
+    (sender principal)
+    (recipient principal)
+    (memo (optional (buff 34)))
+  )
   (begin
     ;; Verify sender is tx-sender
     (asserts! (is-eq tx-sender sender) ERR-NOT-AUTHORIZED)
-    
+
     ;; Check recipient is whitelisted (KYC compliance)
     (asserts! (is-whitelisted recipient) ERR-NOT-WHITELISTED)
-    
+
     ;; Check sender has sufficient available balance (not locked)
     (asserts! (>= (get-available-balance sender) amount) ERR-SHARES-LOCKED)
-    
+
     ;; Check minimum investment amount
     (asserts! (>= amount (var-get min-investment)) ERR-BELOW-MINIMUM)
-    
+
     ;; Get balances
-    (let
-      (
+    (let (
         (sender-balance (unwrap-panic (get-balance sender)))
         (recipient-balance (unwrap-panic (get-balance recipient)))
       )
       ;; Update balances
       (map-set balances sender (- sender-balance amount))
       (map-set balances recipient (+ recipient-balance amount))
-      
+
       (print {
         event: "transfer",
         sender: sender,
         recipient: recipient,
         amount: amount,
-        memo: memo
+        memo: memo,
       })
-      
+
       (ok true)
     )
   )
@@ -200,15 +214,18 @@
 (define-public (add-to-whitelist (address principal))
   (begin
     ;; Only KYC verifier or admin can whitelist
-    (asserts! (or (is-admin) (contract-call? .access-control is-kyc-verifier tx-sender)) ERR-NOT-AUTHORIZED)
-    
+    (asserts!
+      (or (is-admin) (contract-call? .access-control is-kyc-verifier tx-sender))
+      ERR-NOT-AUTHORIZED
+    )
+
     (map-set whitelist address true)
-    
+
     (print {
       event: "address-whitelisted",
-      address: address
+      address: address,
     })
-    
+
     (ok true)
   )
 )
@@ -217,91 +234,96 @@
   (begin
     ;; Only admin can remove from whitelist
     (asserts! (is-admin) ERR-NOT-AUTHORIZED)
-    
+
     (map-delete whitelist address)
-    
+
     (print {
       event: "address-removed-from-whitelist",
-      address: address
+      address: address,
     })
-    
+
     (ok true)
   )
 )
 
-(define-public (lock-shares (address principal) (amount uint))
-  (let
-    (
+(define-public (lock-shares
+    (address principal)
+    (amount uint)
+  )
+  (let (
       (current-locked (get-locked-amount address))
       (available (get-available-balance address))
     )
     ;; Only governance contract can lock shares
-    (asserts! (is-eq tx-sender (var-get access-control-contract)) ERR-NOT-AUTHORIZED)
-    
+    (asserts! (is-eq tx-sender (var-get access-control-contract))
+      ERR-NOT-AUTHORIZED
+    )
+
     ;; Check sufficient available balance
     (asserts! (>= available amount) ERR-INSUFFICIENT-BALANCE)
-    
+
     ;; Update locked amount
     (map-set locked-shares address (+ current-locked amount))
-    
+
     (print {
       event: "shares-locked",
       address: address,
       amount: amount,
-      total-locked: (+ current-locked amount)
+      total-locked: (+ current-locked amount),
     })
-    
+
     (ok true)
   )
 )
 
-(define-public (unlock-shares (address principal) (amount uint))
-  (let
-    (
-      (current-locked (get-locked-amount address))
-    )
+(define-public (unlock-shares
+    (address principal)
+    (amount uint)
+  )
+  (let ((current-locked (get-locked-amount address)))
     ;; Only governance contract can unlock shares
-    (asserts! (is-eq tx-sender (var-get access-control-contract)) ERR-NOT-AUTHORIZED)
-    
+    (asserts! (is-eq tx-sender (var-get access-control-contract))
+      ERR-NOT-AUTHORIZED
+    )
+
     ;; Check sufficient locked balance
     (asserts! (>= current-locked amount) ERR-INSUFFICIENT-BALANCE)
-    
+
     ;; Update locked amount
     (map-set locked-shares address (- current-locked amount))
-    
+
     (print {
       event: "shares-unlocked",
       address: address,
       amount: amount,
-      total-locked: (- current-locked amount)
+      total-locked: (- current-locked amount),
     })
-    
+
     (ok true)
   )
 )
 
 (define-public (burn (amount uint))
-  (let
-    (
+  (let (
       (sender-balance (unwrap-panic (get-balance tx-sender)))
       (current-supply (var-get total-supply))
     )
     ;; Only admin can burn (during property sale/foreclosure)
     (asserts! (is-admin) ERR-NOT-AUTHORIZED)
-    
+
     ;; Check sufficient balance
     (asserts! (>= sender-balance amount) ERR-INSUFFICIENT-BALANCE)
-    
+
     ;; Update balance and supply
     (map-set balances tx-sender (- sender-balance amount))
     (var-set total-supply (- current-supply amount))
-    
+
     (print {
       event: "shares-burned",
       amount: amount,
-      new-total-supply: (- current-supply amount)
+      new-total-supply: (- current-supply amount),
     })
-    
+
     (ok true)
   )
 )
@@ -310,9 +332,9 @@
   (begin
     ;; Only admin can update minimum
     (asserts! (is-admin) ERR-NOT-AUTHORIZED)
-    
+
     (var-set min-investment new-minimum)
-    
+
     (ok true)
   )
 )
