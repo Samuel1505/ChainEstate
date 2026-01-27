@@ -75,10 +75,7 @@
     (token-contract principal)
     (address principal)
   )
-  (match (contract-call? token-contract is-address-whitelisted address)
-    result (unwrap-panic result)
-    false
-  )
+  (unwrap-panic (contract-call? token-contract is-address-whitelisted address))
 )
 
 (define-private (calculate-platform-fee (amount uint))
