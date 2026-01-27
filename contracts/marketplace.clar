@@ -196,7 +196,7 @@
       total-price: total-price,
       expiration: expiration,
       status: ORDER-STATUS-OPEN,
-      share-token-contract: share-token-contract,
+      share-token-contract: (contract-of share-token-contract),
       created-at: stacks-block-height,
     })
 
