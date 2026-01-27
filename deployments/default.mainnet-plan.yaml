@@ -1,0 +1,81 @@
+---
+id: 0
+name: Mainnet deployment
+network: mainnet
+stacks-node: "https://api.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoin.blockstack.com:8332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - contract-publish:
+            contract-name: access-control
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 34520
+            path: contracts/access-control.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: chainestate
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 2290
+            path: contracts/chainestate.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: share-token-trait
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 7130
+            path: contracts/share-token-trait.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: governance
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 106340
+            path: contracts/governance.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: marketplace
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 125020
+            path: contracts/marketplace.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: sip-009-nft-trait
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 4980
+            path: contracts/sip-009-nft-trait.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: property-registry
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 66490
+            path: contracts/property-registry.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: rental-distribution
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 78790
+            path: contracts/rental-distribution.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: sip-010-trait
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 7810
+            path: contracts/sip-010-trait.clar
+            anchor-block-only: true
+            clarity-version: 4
+        - contract-publish:
+            contract-name: share-token
+            expected-sender: SP1ZE73TWJ4WBFHZBBQJAMJDV23K678RXWPDGNHYF
+            cost: 80960
+            path: contracts/share-token.clar
+            anchor-block-only: true
+            clarity-version: 4
+      epoch: "3.3"

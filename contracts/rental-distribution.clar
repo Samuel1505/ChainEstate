@@ -16,6 +16,7 @@
 
 ;; Contract references
 (define-data-var access-control-contract principal tx-sender)
+(define-data-var contract-principal principal tx-sender)
 
 ;; Distribution tracking
 ;; Key: { property-id, year, month }
@@ -62,11 +63,13 @@
   (/ (* amount fee-bps) u10000)
 )
 
-(define-private (get-share-balance (token-contract principal) (investor principal))
+(use-trait share-token-trait .share-token-trait.share-token-trait)
+
+(define-private (get-share-balance (token-contract <share-token-trait>) (investor principal))
   (unwrap-panic (contract-call? token-contract get-balance investor))
 )
 
-(define-private (get-total-shares (token-contract principal))
+(define-private (get-total-shares (token-contract <share-token-trait>))
   (unwrap-panic (contract-call? token-contract get-total-supply))
 )
 
@@ -115,7 +118,7 @@
       ERR-ALREADY-DEPOSITED)
     
     ;; Transfer STX from property manager to contract
-    (unwrap! (stx-transfer? gross-income tx-sender (as-contract tx-sender)) ERR-INVALID-AMOUNT)
+    (try! (stx-transfer? gross-income tx-sender (var-get contract-principal)))
     
     ;; Record deposit
     (map-set rental-deposits
@@ -127,7 +130,7 @@
         maintenance-reserve: maintenance-reserve,
         net-distributable: net-distributable,
         deposited-by: tx-sender,
-        deposit-height: block-height
+        deposit-height: stacks-block-height
       }
     )
     
@@ -156,7 +159,7 @@
     (property-id uint)
     (year uint)
     (month uint)
-    (share-token-contract principal)
+    (share-token-contract <share-token-trait>)
   )
   (let
     (
@@ -177,14 +180,14 @@
     (asserts! (> claimable u0) ERR-NOTHING-TO-CLAIM)
     
     ;; Transfer STX from contract to investor
-    (try! (as-contract (stx-transfer? claimable tx-sender tx-sender)))
+    (try! (stx-transfer? claimable (var-get contract-principal) tx-sender))
     
     ;; Record claim
     (map-set claims
       { property-id: property-id, year: year, month: month, investor: tx-sender }
       {
         amount-claimed: investor-portion,
-        claim-height: block-height
+        claim-height: stacks-block-height
       }
     )
     
@@ -245,7 +248,7 @@
     (asserts! (is-admin) ERR-NOT-AUTHORIZED)
     
     ;; Transfer fees
-    (try! (as-contract (stx-transfer? amount tx-sender recipient)))
+    (try! (stx-transfer? amount (var-get contract-principal) recipient))
     
     (print {
       event: "fees-withdrawn",
