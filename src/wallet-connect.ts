@@ -6,23 +6,19 @@
  */
 
 import {
-  AppConfig,
   UserSession,
   showConnect,
-  openAuthRequestPopup,
   AuthOptions,
   FinishedAuthData,
 } from '@stacks/connect';
-import { StacksMainnet, StacksTestnet, StacksNetwork } from '@stacks/network';
+import { STACKS_MAINNET, STACKS_TESTNET, StacksNetwork } from '@stacks/network';
 
 /**
- * Network configuration
+ * Application details for wallet connection
  */
-export const appConfig: AppConfig = {
-  appDetails: {
-    name: 'ChainEstate',
-    icon: typeof window !== 'undefined' ? window.location.origin + '/logo.png' : '/logo.png',
-  },
+export const appDetails = {
+  name: 'ChainEstate',
+  icon: typeof window !== 'undefined' ? window.location.origin + '/logo.png' : '/logo.png',
 };
 
 /**
@@ -30,14 +26,14 @@ export const appConfig: AppConfig = {
  */
 export function getNetwork(): StacksNetwork {
   const network = process.env.STX_NETWORK || 'testnet';
-  return network === 'mainnet' ? new StacksMainnet() : new StacksTestnet();
+  return network === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
 }
 
 /**
  * Initialize user session
  */
 export function getUserSession(): UserSession {
-  return new UserSession({ appConfig });
+  return new UserSession();
 }
 
 /**
@@ -51,7 +47,7 @@ export async function connectWallet(
   onCancel?: () => void
 ): Promise<void> {
   const authOptions: AuthOptions = {
-    appDetails: appConfig.appDetails,
+    appDetails,
     redirectTo: '/',
     onFinish: (payload) => {
       const userData = payload.userSession.loadUserData();
@@ -65,7 +61,7 @@ export async function connectWallet(
     userSession: getUserSession(),
   };
 
-  await openAuthRequestPopup(authOptions);
+  await showConnect(authOptions);
 }
 
 /**
@@ -73,7 +69,7 @@ export async function connectWallet(
  */
 export async function showConnectModal(): Promise<void> {
   await showConnect({
-    appDetails: appConfig.appDetails,
+    appDetails,
     onFinish: (data) => {
       console.log('User authenticated:', data);
     },
@@ -115,5 +111,15 @@ export function signOut(): void {
  */
 export function getUserAddress(): string | null {
   const user = getCurrentUser();
-  return user?.profile?.stxAddress?.[getNetwork().version] || null;
+  if (!user) return null;
+  
+  // UserData has profile with stxAddress
+  // The address format depends on the network
+  const network = getNetwork();
+  const isMainnet = network === STACKS_MAINNET;
+  
+  // Try to get address from profile or use identity address
+  return user.profile?.stxAddress?.[isMainnet ? 'mainnet' : 'testnet'] 
+    || user.identityAddress 
+    || null;
 }
