@@ -6,22 +6,19 @@
  */
 
 import {
-  AppConfig,
   UserSession,
   showConnect,
   AuthOptions,
   FinishedAuthData,
 } from '@stacks/connect';
-import { StacksMainnet, StacksTestnet, StacksNetwork } from '@stacks/network';
+import { STACKS_MAINNET, STACKS_TESTNET, StacksNetwork } from '@stacks/network';
 
 /**
- * Network configuration
+ * Application details for wallet connection
  */
-export const appConfig: AppConfig = {
-  appDetails: {
-    name: 'ChainEstate',
-    icon: typeof window !== 'undefined' ? window.location.origin + '/logo.png' : '/logo.png',
-  },
+export const appDetails = {
+  name: 'ChainEstate',
+  icon: typeof window !== 'undefined' ? window.location.origin + '/logo.png' : '/logo.png',
 };
 
 /**
@@ -29,14 +26,14 @@ export const appConfig: AppConfig = {
  */
 export function getNetwork(): StacksNetwork {
   const network = process.env.STX_NETWORK || 'testnet';
-  return network === 'mainnet' ? new StacksMainnet() : new StacksTestnet();
+  return network === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
 }
 
 /**
  * Initialize user session
  */
 export function getUserSession(): UserSession {
-  return new UserSession({ appConfig });
+  return new UserSession();
 }
 
 /**
@@ -50,7 +47,7 @@ export async function connectWallet(
   onCancel?: () => void
 ): Promise<void> {
   const authOptions: AuthOptions = {
-    appDetails: appConfig.appDetails,
+    appDetails,
     redirectTo: '/',
     onFinish: (payload) => {
       const userData = payload.userSession.loadUserData();
